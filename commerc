@@ -1,0 +1,75 @@
+import org.web3j.abi.FunctionEncoder;
+import org.web3j.abi.TypeReference;
+import org.web3j.abi.datatypes.Address;
+import org.web3j.abi.datatypes.Function;
+import org.web3j.abi.datatypes.generated.Uint256;
+import org.web3j.crypto.Credentials;
+import org.web3j.protocol.Web3j;
+import org.web3j.protocol.core.DefaultBlockParameterName;
+import org.web3j.protocol.core.methods.request.Transaction;
+import org.web3j.protocol.core.methods.response.EthBlockNumber;
+import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
+import org.web3j.protocol.core.methods.response.EthSendTransaction;
+import org.web3j.protocol.http.HttpService;
+import org.web3j.tx.RawTransactionManager;
+import org.web3j.tx.TransactionManager;
+import org.web3j.utils.Convert;
+import java.io.IOException;
+import java.math.BigInteger;
+
+public class UniswapTransaction {
+    private static final String INFURA_URL = "https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID";
+    private static final String PRIVATE_KEY = "YOUR_PRIVATE_KEY";
+    private static final String WALLET_ADDRESS = "YOUR_WALLET_ADDRESS";
+    private static final String UNISWAP_CONTRACT_ADDRESS = "UNISWAP_CONTRACT_ADDRESS";
+
+    public static void main(String[] args) {
+        Web3j web3 = Web3j.build(new HttpService(INFURA_URL));
+
+        // Создание экземпляра контракта Uniswap
+        TransactionManager transactionManager = new RawTransactionManager(web3, getCredentials(PRIVATE_KEY));
+        UniswapContract uniswapContract = UniswapContract.load(UNISWAP_CONTRACT_ADDRESS, web3, transactionManager, BigInteger.ZERO, BigInteger.ZERO);
+
+        // Получение текущего номера блока
+        BigInteger blockNumber;
+        try {
+            EthBlockNumber ethBlockNumber = web3.ethBlockNumber().send();
+            blockNumber = ethBlockNumber.getBlockNumber();
+        } catch (IOException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        // Создание функции для обмена токенов на Uniswap
+        Function swapTokensFunction = new Function(
+                "swapTokensForExactTokens",
+                List.of(new Uint256(desiredAmountOut), new Uint256(amountInMax), new DynamicArray<>(
+                        new TypeReference<Address>() {}), new Address(to), new Uint256(deadline)),
+                List.of());
+
+        String encodedFunction = FunctionEncoder.encode(swapTokensFunction);
+
+        // Получение текущего номера транзакции
+        BigInteger transactionCount;
+        try {
+            EthGetTransactionCount ethGetTransactionCount = web3.ethGetTransactionCount(WALLET_ADDRESS, DefaultBlockParameterName.LATEST).send();
+            transactionCount = ethGetTransactionCount.getTransactionCount();
+        } catch (IOException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        // Создание и отправка транзакции
+        Transaction transaction = Transaction.createFunctionCallTransaction(WALLET_ADDRESS, transactionCount,
+                Convert.toWei("10", Convert.Unit.GWEI).toBigInteger(), BigInteger.valueOf(300000),
+                UNISWAP_CONTRACT_ADDRESS, encodedFunction);
+
+        EthSendTransaction ethSendTransaction;
+        try {
+            ethSendTransaction = web3.ethSendTransaction(transaction).send();
+        } catch (IOException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        String transactionHash
